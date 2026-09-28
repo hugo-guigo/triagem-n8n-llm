@@ -102,8 +102,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Duf44rWCXtGuWPhm",
-          "name": "Header Auth account"
+          "id": "GroqApiKey000001",
+          "name": "Groq API"
         }
       },
       "retryOnFail": true,

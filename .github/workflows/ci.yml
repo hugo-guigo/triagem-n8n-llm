@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  estaticos:
+    name: Testes sem n8n (workflows, dados, métricas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -m "not integracao" -v
+
+  integracao:
+    name: n8n + Postgres de verdade, caminhos sem LLM
+    needs: estaticos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Gerar .env com senhas aleatórias (sem chave do LLM)
+        run: python scripts/gerar_env.py
+      - name: Subir n8n e Postgres
+        run: docker compose up -d --wait postgres && docker compose up -d n8n
+      - name: Credenciais, importar e publicar workflows
+        run: python scripts/configurar_n8n.py
+      - name: Testes de integração
+        env:
+          RODAR_INTEGRACAO: "1"
+        run: pytest -m integracao -v
+      - name: Logs dos containers
+        if: failure()
+        run: docker compose logs --tail 200
