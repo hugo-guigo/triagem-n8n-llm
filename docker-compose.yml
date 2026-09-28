@@ -53,7 +53,8 @@ services:
       - "127.0.0.1:5678:5678"
     volumes:
       - n8n-data:/home/node/.n8n
-      - ./workflows:/workflows:ro
+      # leitura e escrita: o export do n8n grava direto aqui, no repositório
+      - ./workflows:/workflows
 
 volumes:
   db-data:

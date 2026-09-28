@@ -1,0 +1,107 @@
+{
+  "id": "TriagemMsgs00001",
+  "name": "Triagem de mensagens",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triagem",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "5f3c2a10-7d4e-4b8a-9c21-7a1e0b9d2f01"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida o corpo do POST antes de gastar uma chamada de LLM.\n// Saída: { valido, erros[], mensagem{} } com os campos já limpos (trim).\nconst LIMITES = { id_mensagem: 64, nome: 100, canal: 20, texto: 2000 };\n\nconst body = $input.first().json.body;\nif (body === null || typeof body !== 'object' || Array.isArray(body)) {\n  return [{ json: { valido: false, erros: ['o corpo precisa ser um objeto JSON'] } }];\n}\n\nconst campo = (nome) => (typeof body[nome] === 'string' ? body[nome].trim() : '');\nconst erros = [];\n\nfor (const [nome, max] of Object.entries(LIMITES)) {\n  const valor = campo(nome);\n  if (!valor) erros.push(`campo obrigatório ausente ou vazio: ${nome}`);\n  else if (valor.length > max) erros.push(`${nome} passa de ${max} caracteres`);\n}\n\n// o id vira chave única no banco, então aceita só um formato previsível\nif (campo('id_mensagem') && !/^[A-Za-z0-9_-]+$/.test(campo('id_mensagem'))) {\n  erros.push('id_mensagem aceita só letras, números, _ e -');\n}\n\nreturn [{\n  json: {\n    valido: erros.length === 0,\n    erros,\n    mensagem: {\n      id_mensagem: campo('id_mensagem'),\n      nome: campo('nome'),\n      canal: campo('canal').toLowerCase(),\n      texto: campo('texto'),\n    },\n  },\n}];\n"
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000002",
+      "name": "Validar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1d2e3f4-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000003",
+      "name": "Entrada válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'recebido', id_mensagem: $json.mensagem.id_mensagem } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000004",
+      "name": "Responder 200 (provisório)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'erro', erros: $json.erros } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000005",
+      "name": "Responder 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 100]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validar entrada", "type": "main", "index": 0 }]]
+    },
+    "Validar entrada": {
+      "main": [[{ "node": "Entrada válida?", "type": "main", "index": 0 }]]
+    },
+    "Entrada válida?": {
+      "main": [
+        [{ "node": "Responder 200 (provisório)", "type": "main", "index": 0 }],
+        [{ "node": "Responder 400", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
