@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Valida o corpo do POST antes de gastar uma chamada de LLM.\n// Saída: { valido, erros[], mensagem{} } com os campos já limpos (trim).\nconst LIMITES = { id_mensagem: 64, nome: 100, canal: 20, texto: 2000 };\nconst CANAIS = ['whatsapp', 'email', 'site', 'instagram'];\n\nconst body = $input.first().json.body;\nif (body === null || typeof body !== 'object' || Array.isArray(body)) {\n  return [{ json: { valido: false, erros: ['o corpo precisa ser um objeto JSON'] } }];\n}\n\nconst campo = (nome) => (typeof body[nome] === 'string' ? body[nome].trim() : '');\nconst erros = [];\n\nfor (const [nome, max] of Object.entries(LIMITES)) {\n  const valor = campo(nome);\n  if (!valor) erros.push(`campo obrigatório ausente ou vazio: ${nome}`);\n  else if (valor.length > max) erros.push(`${nome} passa de ${max} caracteres`);\n}\n\n// o id vira chave única no banco, então aceita só um formato previsível\nif (campo('id_mensagem') && !/^[A-Za-z0-9_-]+$/.test(campo('id_mensagem'))) {\n  erros.push('id_mensagem aceita só letras, números, _ e -');\n}\n\nif (campo('canal') && !CANAIS.includes(campo('canal').toLowerCase())) {\n  erros.push(`canal inválido: use ${CANAIS.join(', ')}`);\n}\n\nreturn [{\n  json: {\n    valido: erros.length === 0,\n    erros,\n    mensagem: {\n      id_mensagem: campo('id_mensagem'),\n      nome: campo('nome'),\n      canal: campo('canal').toLowerCase(),\n      texto: campo('texto'),\n    },\n  },\n}];\n"
+        "jsCode": "// Valida o corpo do POST antes de gastar uma chamada de LLM.\n// Saída: { valido, erros[], mensagem{} } com os campos já limpos (trim).\nconst LIMITES = { id_mensagem: 64, nome: 100, canal: 20, texto: 2000 };\nconst CANAIS = ['whatsapp', 'email', 'site', 'instagram'];\n\nconst recebido_em_ms = Date.now();   // início da medição de latência\nconst body = $input.first().json.body;\nif (body === null || typeof body !== 'object' || Array.isArray(body)) {\n  return [{ json: { valido: false, erros: ['o corpo precisa ser um objeto JSON'], recebido_em_ms } }];\n}\n\nconst campo = (nome) => (typeof body[nome] === 'string' ? body[nome].trim() : '');\nconst erros = [];\n\nfor (const [nome, max] of Object.entries(LIMITES)) {\n  const valor = campo(nome);\n  if (!valor) erros.push(`campo obrigatório ausente ou vazio: ${nome}`);\n  else if (valor.length > max) erros.push(`${nome} passa de ${max} caracteres`);\n}\n\n// o id vira chave única no banco, então aceita só um formato previsível\nif (campo('id_mensagem') && !/^[A-Za-z0-9_-]+$/.test(campo('id_mensagem'))) {\n  erros.push('id_mensagem aceita só letras, números, _ e -');\n}\n\nif (campo('canal') && !CANAIS.includes(campo('canal').toLowerCase())) {\n  erros.push(`canal inválido: use ${CANAIS.join(', ')}`);\n}\n\nreturn [{\n  json: {\n    valido: erros.length === 0,\n    erros,\n    recebido_em_ms,\n    mensagem: {\n      id_mensagem: campo('id_mensagem'),\n      nome: campo('nome'),\n      canal: campo('canal').toLowerCase(),\n      texto: campo('texto'),\n    },\n  },\n}];\n"
       },
       "id": "0b7f8a51-1c2e-4a4b-9d10-000000000002",
       "name": "Validar entrada",
@@ -64,23 +64,6 @@
       "position": [
         448,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { status: 'erro', erros: $json.erros } }}",
-        "options": {
-          "responseCode": 400
-        }
-      },
-      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000005",
-      "name": "Responder 400",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        672,
-        220
       ]
     },
     {
@@ -138,23 +121,6 @@
       "typeVersion": 2,
       "position": [
         1568,
-        -96
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000004",
-      "name": "Responder 200",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        2688,
         -96
       ]
     },
@@ -371,23 +337,6 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { status: 'erro', id_mensagem: $('Validar entrada').first().json.mensagem.id_mensagem, mensagem: 'Não conseguimos registrar sua mensagem agora. Tente de novo em alguns minutos.' } }}",
-        "options": {
-          "responseCode": 503
-        }
-      },
-      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000015",
-      "name": "Responder 503 (banco)",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        2464,
-        260
-      ]
-    },
-    {
-      "parameters": {
         "operation": "executeQuery",
         "query": "-- Otimização: evita gastar LLM com mensagem repetida.\n-- A garantia contra duplicata continua sendo o UNIQUE de cada tabela.\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM solicitacoes WHERE id_mensagem = $1) THEN 'crm'\n  WHEN EXISTS (SELECT 1 FROM alertas      WHERE id_mensagem = $1) THEN 'alerta'\n  WHEN EXISTS (SELECT 1 FROM fila_revisao WHERE id_mensagem = $1) THEN 'revisao'\nEND AS destino_anterior;",
         "options": {
@@ -445,24 +394,7 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { status: 'duplicada', id_mensagem: $('Validar entrada').first().json.mensagem.id_mensagem, destino: $json.destino_anterior, protocolo: null, mensagem: 'Esta mensagem já tinha sido recebida.' } }}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000018",
-      "name": "Responder 200 (já recebida)",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1120,
-        -300
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// A chamada ao LLM falhou mesmo depois das tentativas (timeout, 429, erro 5xx, chave inválida).\n// A mensagem não se perde: vai para a fila de revisão com o erro anotado, no mesmo formato\n// que \"Decidir destino\" produz, para seguir pelos mesmos nós.\nconst mensagem = $('Validar entrada').first().json.mensagem;\nconst item = $input.first().json;\nconst erro = item.error ?? item;\nconst codigo = erro.httpCode ?? erro.status ?? null;   // ex.: 429 quando estoura o limite de taxa\nconst descricao = typeof erro === 'string' ? erro : (erro.message ?? JSON.stringify(erro));\nconst texto = codigo ? `HTTP ${codigo}: ${descricao}` : descricao;\n\nreturn [{\n  json: {\n    mensagem,\n    json_valido: false,\n    problema: `erro na API do LLM: ${texto}`.slice(0, 500),\n    classificacao: null,\n    saida_llm: texto.slice(0, 2000),\n    metricas: {\n      modelo: null,\n      latencia_llm_ms: Date.now() - $('Montar requisição').first().json.inicio_llm,\n      tokens_entrada: null,\n      tokens_saida: null,\n      finish_reason: null,\n    },\n    destino: 'revisao',\n    motivo_revisao: 'erro_llm',\n    motivo_alerta: null,\n  },\n}];\n"
+        "jsCode": "// A chamada ao LLM falhou mesmo depois das tentativas (timeout, 429, erro 5xx, chave inválida).\n// A mensagem não se perde: vai para a fila de revisão com o erro anotado, no mesmo formato\n// que \"Decidir destino\" produz, para seguir pelos mesmos nós.\nconst mensagem = $('Validar entrada').first().json.mensagem;\nconst item = $input.first().json;\nconst erro = item.error ?? item;\nconst codigo = erro.httpCode ?? erro.status ?? null;   // ex.: 429 quando estoura o limite de taxa\nconst descricao = item.message ?? (typeof erro === 'string' ? erro : (erro.message ?? erro.description ?? JSON.stringify(erro)));\nconst texto = codigo ? `HTTP ${codigo}: ${descricao}` : descricao;\n\nreturn [{\n  json: {\n    mensagem,\n    json_valido: false,\n    problema: `erro na API do LLM: ${texto}`.slice(0, 500),\n    classificacao: null,\n    saida_llm: texto.slice(0, 2000),\n    metricas: {\n      modelo: null,\n      latencia_llm_ms: Date.now() - $('Montar requisição').first().json.inicio_llm,\n      tokens_entrada: null,\n      tokens_saida: null,\n      finish_reason: null,\n    },\n    destino: 'revisao',\n    motivo_revisao: 'erro_llm',\n    motivo_alerta: null,\n  },\n}];\n"
       },
       "id": "0b7f8a51-1c2e-4a4b-9d10-000000000019",
       "name": "Handoff por erro do LLM",
@@ -471,6 +403,60 @@
       "position": [
         1568,
         220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Todos os caminhos terminam aqui. Este nó decide o status HTTP e o corpo da resposta\n// e monta a linha do log de observabilidade (tabela execucoes).\nconst v = $('Validar entrada').first().json;\nconst e = $input.first().json;\nconst decidido = $('Decidir destino').isExecuted ? $('Decidir destino').first().json\n  : $('Handoff por erro do LLM').isExecuted ? $('Handoff por erro do LLM').first().json\n  : null;\nconst id_mensagem = v.mensagem?.id_mensagem || null;\n\nlet http_status;\nlet corpo;\nlet destino;\nlet erro = null;\n\nif (!v.valido) {\n  // entrada inválida: 400, nem chega no banco nem no LLM\n  http_status = 400;\n  corpo = { status: 'erro', erros: v.erros };\n  destino = 'invalido';\n  erro = v.erros.join('; ');\n} else if (e.error !== undefined) {\n  // saída de erro de um nó do Postgres: não confirma nada ao cliente\n  http_status = 503;\n  corpo = { status: 'erro', id_mensagem, mensagem: 'Não conseguimos registrar sua mensagem agora. Tente de novo em alguns minutos.' };\n  destino = 'erro';\n  // na saída de erro, o n8n põe o texto em message e os detalhes em error\n  const detalhe = e.message ?? (typeof e.error === 'string' ? e.error : e.error.message ?? e.error.description);\n  erro = `${e.error?.node?.name ?? 'Postgres'}: ${detalhe}`;\n} else if (e.destino_anterior !== undefined) {\n  // \"Já recebida?\" achou o id_mensagem antes de chamar o LLM\n  http_status = 200;\n  corpo = { status: 'duplicada', id_mensagem, destino: e.destino_anterior, protocolo: null, mensagem: 'Esta mensagem já tinha sido recebida.' };\n  destino = 'duplicada';\n} else {\n  // veio de \"Montar resposta\": gravou (ou era resposta automática)\n  http_status = 200;\n  corpo = e;\n  destino = e.status === 'duplicada' ? 'duplicada' : e.destino;\n  erro = decidido?.problema ?? null;\n}\n\nconst c = decidido?.classificacao ?? null;\nconst m = decidido?.metricas ?? {};\n\nreturn [{\n  json: {\n    http_status,\n    corpo,\n    log: {\n      id_execucao: String($execution.id),\n      id_mensagem,\n      destino,\n      categoria: c?.categoria ?? null,\n      urgencia: c?.urgencia ?? null,\n      confianca: c?.confianca ?? null,\n      handoff: destino === 'revisao',\n      erro: erro ? String(erro).slice(0, 1000) : null,\n      modelo: m.modelo ?? null,\n      latencia_llm_ms: m.latencia_llm_ms ?? null,\n      latencia_ms: Date.now() - v.recebido_em_ms,   // do recebimento até a resposta pronta\n      tokens_entrada: m.tokens_entrada ?? null,\n      tokens_saida: m.tokens_saida ?? null,\n    },\n  },\n}];\n"
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000020",
+      "name": "Preparar log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execucoes (id_execucao, id_mensagem, destino, categoria, urgencia, confianca,\n  handoff, erro, modelo, latencia_llm_ms, latencia_ms, tokens_entrada, tokens_saida)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.log.id_execucao, $json.log.id_mensagem, $json.log.destino, $json.log.categoria, $json.log.urgencia, $json.log.confianca, $json.log.handoff, $json.log.erro, $json.log.modelo, $json.log.latencia_llm_ms, $json.log.latencia_ms, $json.log.tokens_entrada, $json.log.tokens_saida] }}"
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000021",
+      "name": "Registrar execução",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2912,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PgClinicaApp0001",
+          "name": "Postgres clínica (app)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Preparar log').first().json.corpo }}",
+        "options": {
+          "responseCode": "={{ $('Preparar log').first().json.http_status }}"
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000022",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3136,
+        100
       ]
     }
   ],
@@ -508,7 +494,7 @@
         ],
         [
           {
-            "node": "Responder 400",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -609,7 +595,7 @@
         ],
         [
           {
-            "node": "Responder 503 (banco)",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -627,7 +613,7 @@
         ],
         [
           {
-            "node": "Responder 503 (banco)",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -645,7 +631,7 @@
         ],
         [
           {
-            "node": "Responder 503 (banco)",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -656,7 +642,7 @@
       "main": [
         [
           {
-            "node": "Responder 200",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -674,7 +660,7 @@
         ],
         [
           {
-            "node": "Responder 503 (banco)",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -685,7 +671,7 @@
       "main": [
         [
           {
-            "node": "Responder 200 (já recebida)",
+            "node": "Preparar log",
             "type": "main",
             "index": 0
           }
@@ -704,6 +690,28 @@
         [
           {
             "node": "Gravar na fila de revisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log": {
+      "main": [
+        [
+          {
+            "node": "Registrar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar execução": {
+      "main": [
+        [
+          {
+            "node": "Responder",
             "type": "main",
             "index": 0
           }
