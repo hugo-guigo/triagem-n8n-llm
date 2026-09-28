@@ -1,0 +1,92 @@
+{
+  "id": "TriagemErros0001",
+  "name": "Tratamento de erros",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000030",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO falhas (workflow, id_execucao, no, mensagem, url)\nVALUES ($1, $2, $3, $4, $5)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.workflow.name, String($json.execution.id ?? ''), $json.execution.lastNodeExecuted ?? null, ($json.execution.error?.message ?? 'sem mensagem').slice(0, 1000), $json.execution.url ?? null] }}"
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000031",
+      "name": "Registrar falha",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PgClinicaApp0001",
+          "name": "Postgres clínica (app)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ntfy.sh/TROQUE-PELO-SEU-TOPICO",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ 'Falha no workflow ' + $('Error Trigger').first().json.workflow.name + ' (nó ' + ($('Error Trigger').first().json.execution.lastNodeExecuted ?? '?') + '): ' + ($('Error Trigger').first().json.execution.error?.message ?? '') }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000032",
+      "name": "Avisar no celular (ntfy)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "disabled": true,
+      "notes": "Opcional. Instale o app ntfy, assine um tópico difícil de adivinhar, troque a URL e ative o nó."
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Registrar falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar falha": {
+      "main": [
+        [
+          {
+            "node": "Avisar no celular (ntfy)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

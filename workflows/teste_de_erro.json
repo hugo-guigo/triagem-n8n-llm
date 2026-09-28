@@ -1,0 +1,54 @@
+{
+  "id": "TriagemTesteErr1",
+  "name": "Teste de erro",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "teste-erro",
+        "options": {}
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000040",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5f3c2a10-7d4e-4b8a-9c21-7a1e0b9d2f02"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Falha de propósito, para provar que o workflow de erro registra falhas não tratadas.\nthrow new Error('falha simulada para testar o Error Trigger');\n"
+      },
+      "id": "0b7f8a51-1c2e-4a4b-9d10-000000000041",
+      "name": "Falhar de propósito",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Falhar de propósito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "TriagemErros0001"
+  },
+  "pinData": {},
+  "active": false
+}
