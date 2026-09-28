@@ -1,0 +1,60 @@
+# Triagem de mensagens com n8n + LLM
+# Dois serviços: o PostgreSQL guarda o banco interno do n8n e o banco da clínica
+# fictícia ("CRM", alertas, fila de revisão e log). O n8n roda os workflows.
+# Todos os segredos vêm do arquivo .env, que não vai para o Git.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: clinica
+      # lidos pelo script de inicialização para criar os usuários do n8n e da aplicação
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # executados só na primeira vez, com o volume vazio, em ordem alfabética
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # só na sua máquina (127.0.0.1), para você consultar o banco com psql ou DBeaver
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d clinica"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.40.7
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+      # criptografa as credenciais (ex.: chave do LLM) salvas no banco do n8n
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      # guarda o histórico de execuções por 7 dias para você depurar pela interface
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 168
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./workflows:/workflows:ro
+
+volumes:
+  db-data:
+  n8n-data:

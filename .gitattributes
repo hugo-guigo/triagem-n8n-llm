@@ -1,0 +1,4 @@
+# Scripts rodam dentro de containers Linux: precisam de fim de linha LF, mesmo clonados no Windows
+*.sh  text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
